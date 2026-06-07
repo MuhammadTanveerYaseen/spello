@@ -1,8 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { isAuthenticated } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { investorTotals } from "@/lib/investment";
 import Investor from "@/models/Investor";
 import Investment from "@/models/Investment";
 
@@ -12,38 +11,40 @@ export async function GET() {
   }
 
   await connectDB();
-  const [investors, investments] = await Promise.all([
-    Investor.find().sort({ name: 1 }),
-    Investment.find(),
+
+  const [investors, totals] = await Promise.all([
+    Investor.find().sort({ name: 1 }).lean(),
+    Investment.aggregate([
+      {
+        $group: {
+          _id: "$investorId",
+          contributions: {
+            $sum: { $cond: [{ $eq: ["$type", "contribution"] }, "$amount", 0] },
+          },
+          returns: {
+            $sum: { $cond: [{ $eq: ["$type", "return"] }, "$amount", 0] },
+          },
+        },
+      },
+    ]),
   ]);
 
+  const totalsMap = new Map(
+    totals.map((t: { _id: string; contributions: number; returns: number }) => [
+      String(t._id),
+      { contributions: t.contributions, returns: t.returns, netFund: t.contributions - t.returns },
+    ])
+  );
+
   const list = investors.map((inv) => {
-    const { contributions, returns, netFund } = investorTotals(
-      investments.map((i) => ({
-        investorId: i.investorId,
-        type: i.type,
-        amount: i.amount,
-      })),
-      inv._id.toString()
-    );
-    return {
-      _id: inv._id,
-      name: inv.name,
-      role: inv.role,
-      phone: inv.phone,
-      email: inv.email,
-      sharePercent: inv.sharePercent,
-      notes: inv.notes,
-      contributions,
-      returns,
-      netFund,
-    };
+    const stats = totalsMap.get(String(inv._id)) ?? { contributions: 0, returns: 0, netFund: 0 };
+    return { ...inv, ...stats };
   });
 
   return NextResponse.json(list);
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

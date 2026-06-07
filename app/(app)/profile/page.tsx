@@ -55,7 +55,7 @@ export default function ProfilePage() {
     <div className="space-y-5">
       <div className="page-header text-center">
         <div className="mx-auto mb-3 flex justify-center">
-          <AppLogo size="md" showText={false} />
+          <AppLogo size="md" align="center" />
         </div>
         <h1 className="text-xl font-bold">{profile.cafeName}</h1>
         <p className="text-sm text-slate-400">{profile.ownerName || "Account"}</p>

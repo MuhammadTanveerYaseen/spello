@@ -16,13 +16,13 @@ export async function POST(req: NextRequest) {
     const valid = await bcrypt.compare(securityKey, settings.securityKeyHash);
 
     if (!valid) {
-      await logActivity("Failed login attempt", "Invalid security key", "auth");
+      void logActivity("Failed login attempt", "Invalid security key", "auth");
       return NextResponse.json({ error: "Invalid security key" }, { status: 401 });
     }
 
     const token = signToken();
     await setSessionCookie(token);
-    await logActivity("Logged in", "Security key verified", "auth");
+    void logActivity("Logged in", "Security key verified", "auth");
 
     return NextResponse.json({ success: true });
   } catch (error) {

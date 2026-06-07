@@ -27,7 +27,7 @@ export default function AuthForm() {
         return;
       }
 
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } catch {
       setError("Connection failed");
     } finally {

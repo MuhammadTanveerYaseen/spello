@@ -62,21 +62,37 @@ export default function InvoiceUpload({ onChange, onError }: InvoiceUploadProps)
 }
 
 export function ViewInvoiceButton({
+  type,
+  id,
   invoiceName,
-  invoiceData,
 }: {
+  type: "expenses" | "investments";
+  id: string;
   invoiceName?: string;
-  invoiceData?: string;
 }) {
-  if (!invoiceName || !invoiceData) return null;
+  const [loading, setLoading] = useState(false);
+
+  if (!invoiceName) return null;
+
+  async function openInvoice() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/${type}/${id}/invoice`);
+      const data = await res.json();
+      if (data.invoiceData) window.open(data.invoiceData, "_blank");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <button
       type="button"
-      onClick={() => window.open(invoiceData, "_blank")}
-      className="mt-2 text-xs font-medium text-blue-400 hover:text-blue-300"
+      onClick={openInvoice}
+      disabled={loading}
+      className="min-h-[36px] text-xs font-medium text-blue-400 active:text-blue-300 disabled:opacity-50"
     >
-      View invoice
+      {loading ? "Opening..." : "View invoice"}
     </button>
   );
 }

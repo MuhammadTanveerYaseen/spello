@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { isAuthenticated } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { getExpenseTotal } from "@/lib/expense-stats";
+import { INVESTMENT_LIST_FIELDS, DEFAULT_PAGE_SIZE } from "@/lib/fields";
 import { formatPKR } from "@/lib/format";
-import { getFundSummary, sumInvestments } from "@/lib/investment";
+import { getFundSummary, getFilteredFundSummary } from "@/lib/investment";
 import { buildDateFilter, buildSearchFilter } from "@/lib/query";
-import Expense from "@/models/Expense";
 import Investment from "@/models/Investment";
 import Investor from "@/models/Investor";
 
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
   const search = searchParams.get("search");
+  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+  const limit = Math.min(100, parseInt(searchParams.get("limit") || String(DEFAULT_PAGE_SIZE), 10));
 
   await connectDB();
 
@@ -36,25 +39,36 @@ export async function GET(req: NextRequest) {
   );
   if (searchFilter) Object.assign(query, searchFilter);
 
-  const [investments, fund, expenses, filteredTotals] = await Promise.all([
-    Investment.find(query).sort({ date: -1 }),
+  const skip = (page - 1) * limit;
+
+  const [investments, fund, expenseStats, filteredTotals, totalCount] = await Promise.all([
+    Investment.find(query)
+      .select(INVESTMENT_LIST_FIELDS)
+      .sort({ date: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     getFundSummary(),
-    Expense.find(),
-    Investment.find(query),
+    getExpenseTotal(),
+    getFilteredFundSummary(query),
+    Investment.countDocuments(query),
   ]);
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
-  const availableBalance = fund.netFund - totalExpenses;
+
+  const availableBalance = fund.netFund - expenseStats.total;
   const utilization =
-    fund.netFund > 0 ? Math.min(100, (totalExpenses / fund.netFund) * 100) : 0;
+    fund.netFund > 0 ? Math.min(100, Math.round((expenseStats.total / fund.netFund) * 100)) : 0;
 
   return NextResponse.json({
     investments,
     fund,
-    totalExpenses,
+    totalExpenses: expenseStats.total,
     availableBalance,
     utilization: Math.round(utilization),
-    filteredTotals: sumInvestments(filteredTotals),
+    filteredTotals,
     count: investments.length,
+    totalCount,
+    page,
+    hasMore: skip + investments.length < totalCount,
   });
 }
 
@@ -72,7 +86,7 @@ export async function POST(req: NextRequest) {
     }
 
     await connectDB();
-    const investor = await Investor.findById(investorId);
+    const investor = await Investor.findById(investorId).lean();
     if (!investor) {
       return NextResponse.json({ error: "Investor not found" }, { status: 404 });
     }
@@ -99,7 +113,8 @@ export async function POST(req: NextRequest) {
       "investment"
     );
 
-    return NextResponse.json(investment, { status: 201 });
+    const { invoiceData: _, ...safe } = investment.toObject();
+    return NextResponse.json(safe, { status: 201 });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Failed to record transaction" }, { status: 500 });

@@ -17,5 +17,8 @@ const InvestmentSchema = new Schema(
   { timestamps: true }
 );
 
+InvestmentSchema.index({ date: -1 });
+InvestmentSchema.index({ investorId: 1, date: -1 });
+
 export default models.Investment ||
   mongoose.model("Investment", InvestmentSchema);

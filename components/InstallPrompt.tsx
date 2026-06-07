@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import AppLogo from "@/components/AppLogo";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -58,8 +59,8 @@ export default function InstallPrompt() {
     return (
       <div className={`fixed ${position} left-3 right-3 z-40 mx-auto max-w-md safe-bottom`}>
         <div className="card flex items-center gap-3 border-blue-800 bg-slate-800 p-3 shadow-lg">
-          <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-[22%] border border-slate-600 bg-slate-900">
-            <span className="text-[10px] font-bold text-blue-500">SC</span>
+          <div className="flex h-10 shrink-0 items-center">
+            <AppLogo size="sm" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">Install Spello App</p>

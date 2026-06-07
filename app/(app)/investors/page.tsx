@@ -2,13 +2,15 @@
 
 import FilterBar, { emptyFilters, filtersToParams, type Filters } from "@/components/FilterBar";
 import InvoiceUpload, { ViewInvoiceButton, type InvoiceData } from "@/components/InvoiceUpload";
+import { ListSkeleton } from "@/components/ListSkeleton";
 import {
   INVESTOR_ROLES,
   INVESTMENT_TYPES,
   PAYMENT_METHODS,
 } from "@/lib/constants";
 import { formatPKR } from "@/lib/format";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 interface Investor {
   _id: string;
@@ -24,7 +26,6 @@ interface Investor {
 
 interface Investment {
   _id: string;
-  investorId: string;
   investorName: string;
   type: "contribution" | "return";
   amount: number;
@@ -33,8 +34,6 @@ interface Investment {
   reference: string;
   note: string;
   invoiceName?: string;
-  invoiceData?: string;
-  invoiceMime?: string;
 }
 
 const typeOptions = [
@@ -44,13 +43,6 @@ const typeOptions = [
 
 export default function InvestorsPage() {
   const [investors, setInvestors] = useState<Investor[]>([]);
-  const [investments, setInvestments] = useState<Investment[]>([]);
-  const [fund, setFund] = useState({ contributions: 0, returns: 0, netFund: 0 });
-  const [availableBalance, setAvailableBalance] = useState(0);
-  const [totalExpenses, setTotalExpenses] = useState(0);
-  const [utilization, setUtilization] = useState(0);
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [showInvestorForm, setShowInvestorForm] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
@@ -58,27 +50,33 @@ export default function InvestorsPage() {
   const [invoice, setInvoice] = useState<InvoiceData>({ name: "", data: "", mime: "" });
   const [formError, setFormError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const qs = filtersToParams(filters);
-    const [invRes, txRes] = await Promise.all([
-      fetch("/api/investors").then((r) => r.json()),
-      fetch(`/api/investments${qs ? `?${qs}` : ""}`).then((r) => r.json()),
-    ]);
-    setInvestors(invRes);
-    setInvestments(txRes.investments ?? []);
-    setFund(txRes.fund ?? { contributions: 0, returns: 0, netFund: 0 });
-    setAvailableBalance(txRes.availableBalance ?? 0);
-    setTotalExpenses(txRes.totalExpenses ?? 0);
-    setUtilization(txRes.utilization ?? 0);
-    setCount(txRes.count ?? 0);
-    setLoading(false);
-  }, [filters]);
+  const filtersKey = useMemo(() => filtersToParams(filters), [filters]);
 
-  useEffect(() => {
-    const timer = setTimeout(load, 300);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const { items: investments, meta, loading, loadingMore, hasMore, loadMore, refresh } =
+    usePaginatedList<Investment>({
+      baseUrl: "/api/investments",
+      filtersKey,
+      getItems: (d) => (d.investments as Investment[]) ?? [],
+      getHasMore: (d) => !!d.hasMore,
+    });
+
+  const fund = (meta.fund as { contributions: number; returns: number; netFund: number }) ?? {
+    contributions: 0,
+    returns: 0,
+    netFund: 0,
+  };
+  const availableBalance = (meta.availableBalance as number) ?? 0;
+  const totalExpenses = (meta.totalExpenses as number) ?? 0;
+  const utilization = (meta.utilization as number) ?? 0;
+  const totalCount = (meta.totalCount as number) ?? 0;
+
+  function loadInvestors() {
+    fetch("/api/investors")
+      .then((r) => r.json())
+      .then(setInvestors);
+  }
+
+  useEffect(loadInvestors, []);
 
   async function handleAddInvestor(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -99,7 +97,8 @@ export default function InvestorsPage() {
     setSubmitting(false);
     if (res.ok) {
       setShowInvestorForm(false);
-      load();
+      loadInvestors();
+      refresh();
       (e.target as HTMLFormElement).reset();
     }
   }
@@ -129,7 +128,8 @@ export default function InvestorsPage() {
     if (res.ok) {
       setShowTransactionForm(false);
       setInvoice({ name: "", data: "", mime: "" });
-      load();
+      loadInvestors();
+      refresh();
       (e.target as HTMLFormElement).reset();
     } else {
       const data = await res.json();
@@ -145,45 +145,38 @@ export default function InvestorsPage() {
       alert(data.error || "Could not delete");
       return;
     }
-    load();
+    loadInvestors();
+    refresh();
   }
 
-  const investorListForFilters = investors.map((i) => ({ _id: i._id, name: i.name }));
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <div>
-        <h1 className="text-xl font-bold">Investor Funding</h1>
-        <p className="text-sm text-slate-400">Capital contributions & project fund</p>
+        <h1 className="text-lg font-bold sm:text-xl">Investor Funding</h1>
+        <p className="text-xs text-slate-400 sm:text-sm">Capital & project fund</p>
       </div>
 
       <div className="page-header">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">Total Fund</p>
-            <p className="text-xl font-bold text-emerald-400">{formatPKR(fund.netFund)}</p>
-            <p className="text-xs text-slate-500">
-              {formatPKR(fund.contributions)} in · {formatPKR(fund.returns)} returned
-            </p>
+            <p className="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Total Fund</p>
+            <p className="text-lg font-bold text-emerald-400 sm:text-xl">{formatPKR(fund.netFund)}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">Available</p>
-            <p className={`text-xl font-bold ${availableBalance >= 0 ? "text-blue-400" : "text-red-400"}`}>
+            <p className="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Available</p>
+            <p className={`text-lg font-bold sm:text-xl ${availableBalance >= 0 ? "text-blue-400" : "text-red-400"}`}>
               {formatPKR(availableBalance)}
             </p>
-            <p className="text-xs text-slate-500">{formatPKR(totalExpenses)} spent</p>
+            <p className="text-[10px] text-slate-500">{formatPKR(totalExpenses)} spent</p>
           </div>
         </div>
-        <div className="mt-4">
+        <div className="mt-3">
           <div className="mb-1 flex justify-between text-xs text-slate-500">
-            <span>Fund utilization</span>
+            <span>Utilization</span>
             <span>{utilization}%</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-slate-700">
-            <div
-              className={`h-full rounded-full ${utilization > 90 ? "bg-red-500" : "bg-blue-600"}`}
-              style={{ width: `${utilization}%` }}
-            />
+          <div className="h-2 rounded-full bg-slate-700">
+            <div className={`h-full rounded-full ${utilization > 90 ? "bg-red-500" : "bg-blue-600"}`} style={{ width: `${utilization}%` }} />
           </div>
         </div>
       </div>
@@ -191,128 +184,84 @@ export default function InvestorsPage() {
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => {
-            setShowTransactionForm(!showTransactionForm);
-            setShowInvestorForm(false);
-            if (showTransactionForm) {
-              setInvoice({ name: "", data: "", mime: "" });
-              setFormError("");
-            }
-          }}
-          className="btn-primary text-sm"
+          onClick={() => { setShowTransactionForm(!showTransactionForm); setShowInvestorForm(false); }}
+          className="btn-primary py-3 text-sm"
         >
-          Record Transaction
+          Record
         </button>
         <button
           type="button"
-          onClick={() => {
-            setShowInvestorForm(!showInvestorForm);
-            setShowTransactionForm(false);
-          }}
-          className="btn-secondary text-sm"
+          onClick={() => { setShowInvestorForm(!showInvestorForm); setShowTransactionForm(false); }}
+          className="btn-secondary py-3 text-sm"
         >
           Add Investor
         </button>
       </div>
 
       {showTransactionForm && (
-        <form onSubmit={handleRecordTransaction} className="card space-y-3 p-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Record Transaction
-          </h3>
+        <form onSubmit={handleRecordTransaction} className="card space-y-3 p-3 sm:p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Record Transaction</h3>
           <select name="investorId" required className="input-field">
             <option value="">Select investor</option>
             {investors.map((inv) => (
-              <option key={inv._id} value={inv._id}>
-                {inv.name}
-              </option>
+              <option key={inv._id} value={inv._id}>{inv.name}</option>
             ))}
           </select>
           <select name="type" required className="input-field" defaultValue="contribution">
             {INVESTMENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t === "contribution" ? "Contribution (Money In)" : "Return (Money Out)"}
-              </option>
+              <option key={t} value={t}>{t === "contribution" ? "Contribution (In)" : "Return (Out)"}</option>
             ))}
           </select>
           <input name="amount" type="number" min="1" step="1" required className="input-field" placeholder="Amount (PKR)" />
           <input name="date" type="date" defaultValue={new Date().toISOString().split("T")[0]} className="input-field" />
           <select name="paymentMethod" className="input-field" defaultValue="Bank Transfer">
-            {PAYMENT_METHODS.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
+            {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
-          <input name="reference" className="input-field" placeholder="Reference / receipt no." />
+          <input name="reference" className="input-field" placeholder="Reference no." />
           <input name="note" className="input-field" placeholder="Note (optional)" />
           <InvoiceUpload onChange={setInvoice} onError={setFormError} />
-          {formError && (
-            <p className="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-400">{formError}</p>
-          )}
-          <button type="submit" disabled={submitting || !investors.length} className="btn-primary w-full text-sm">
-            {submitting ? "Saving..." : "Save Transaction"}
+          {formError && <p className="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-400">{formError}</p>}
+          <button type="submit" disabled={submitting || !investors.length} className="btn-primary w-full py-3 text-sm">
+            {submitting ? "Saving..." : "Save"}
           </button>
-          {!investors.length && (
-            <p className="text-xs text-amber-400">Add an investor first before recording transactions.</p>
-          )}
         </form>
       )}
 
       {showInvestorForm && (
-        <form onSubmit={handleAddInvestor} className="card space-y-3 p-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-            New Investor
-          </h3>
+        <form onSubmit={handleAddInvestor} className="card space-y-3 p-3 sm:p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">New Investor</h3>
           <input name="name" required className="input-field" placeholder="Full name" />
           <select name="role" className="input-field" defaultValue="Investor">
-            {INVESTOR_ROLES.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
+            {INVESTOR_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
           <input name="phone" type="tel" className="input-field" placeholder="Phone" />
           <input name="email" type="email" className="input-field" placeholder="Email" />
-          <input name="sharePercent" type="number" min="0" max="100" step="0.1" className="input-field" placeholder="Share % (optional)" />
-          <input name="notes" className="input-field" placeholder="Notes (optional)" />
-          <button type="submit" disabled={submitting} className="btn-primary w-full text-sm">
+          <input name="sharePercent" type="number" min="0" max="100" step="0.1" className="input-field" placeholder="Share %" />
+          <input name="notes" className="input-field" placeholder="Notes" />
+          <button type="submit" disabled={submitting} className="btn-primary w-full py-3 text-sm">
             {submitting ? "Saving..." : "Save Investor"}
           </button>
         </form>
       )}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
           Investors ({investors.length})
         </h2>
         {!investors.length ? (
-          <div className="card py-8 text-center text-sm text-slate-500">
-            No investors added yet
-          </div>
+          <div className="card py-6 text-center text-sm text-slate-500">No investors yet</div>
         ) : (
           <div className="space-y-2">
             {investors.map((inv) => (
-              <div key={inv._id} className="card p-4">
-                <div className="flex items-start justify-between gap-3">
+              <div key={inv._id} className="card p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-semibold">{inv.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {inv.role}
-                      {inv.sharePercent > 0 ? ` · ${inv.sharePercent}% share` : ""}
-                    </p>
-                    {(inv.phone || inv.email) && (
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {[inv.phone, inv.email].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
+                    <p className="text-xs text-slate-500">{inv.role}{inv.sharePercent > 0 ? ` · ${inv.sharePercent}%` : ""}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-emerald-400">{formatPKR(inv.netFund ?? 0)}</p>
-                    <p className="text-[10px] text-slate-500">net contributed</p>
-                  </div>
+                  <p className="shrink-0 font-bold text-emerald-400">{formatPKR(inv.netFund ?? 0)}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteInvestor(inv._id, inv.name)}
-                  className="mt-2 text-xs text-slate-500 hover:text-red-400"
-                >
+                <button type="button" onClick={() => handleDeleteInvestor(inv._id, inv.name)} className="mt-2 min-h-[36px] text-xs text-slate-500">
                   Remove
                 </button>
               </div>
@@ -326,66 +275,52 @@ export default function InvestorsPage() {
         onChange={setFilters}
         showType
         showInvestor
+        collapsible
         typeOptions={typeOptions}
-        investors={investorListForFilters}
+        investors={investors.map((i) => ({ _id: i._id, name: i.name }))}
       />
 
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Transaction History
-          </h2>
-          <span className="text-xs text-slate-500">{count} records</span>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Transactions</h2>
+          <span className="text-xs text-slate-500">{totalCount} total</span>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-          </div>
+        {loading && !investments.length ? (
+          <ListSkeleton rows={4} />
         ) : !investments.length ? (
-          <p className="py-8 text-center text-sm text-slate-500">No transactions match your filters</p>
+          <p className="py-8 text-center text-sm text-slate-500">No transactions found</p>
         ) : (
-          <div className="space-y-2">
-            {investments.map((item) => (
-              <div key={item._id} className="card p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{item.investorName}</p>
-                      {item.invoiceName && (
-                        <span className="shrink-0 rounded bg-emerald-900 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-                          Invoice
-                        </span>
-                      )}
+          <>
+            <div className="space-y-2">
+              {investments.map((item) => (
+                <div key={item._id} className="card p-3 sm:p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="font-medium">{item.investorName}</p>
+                        {item.invoiceName && (
+                          <span className="rounded bg-emerald-900 px-1.5 py-0.5 text-[10px] text-emerald-400">Invoice</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {item.type === "contribution" ? "In" : "Out"} · {new Date(item.date).toLocaleDateString("en-PK", { day: "numeric", month: "short" })}
+                      </p>
+                      <ViewInvoiceButton type="investments" id={item._id} invoiceName={item.invoiceName} />
                     </div>
-                    <p className="text-xs text-slate-500">
-                      {item.type === "contribution" ? "Contribution" : "Return"}
-                      {item.paymentMethod ? ` · ${item.paymentMethod}` : ""}
-                    </p>
-                    {item.reference && (
-                      <p className="text-xs text-slate-500">Ref: {item.reference}</p>
-                    )}
-                    {item.note && <p className="text-xs text-slate-500">{item.note}</p>}
-                    <p className="mt-1 text-xs text-slate-600">
-                      {new Date(item.date).toLocaleDateString("en-PK")}
-                    </p>
-                    <ViewInvoiceButton
-                      invoiceName={item.invoiceName}
-                      invoiceData={item.invoiceData}
-                    />
+                    <span className={`shrink-0 text-sm font-bold sm:text-base ${item.type === "contribution" ? "text-emerald-400" : "text-red-400"}`}>
+                      {item.type === "contribution" ? "+" : "-"}{formatPKR(item.amount)}
+                    </span>
                   </div>
-                  <span
-                    className={`shrink-0 font-bold ${
-                      item.type === "contribution" ? "text-emerald-400" : "text-red-400"
-                    }`}
-                  >
-                    {item.type === "contribution" ? "+" : "-"}
-                    {formatPKR(item.amount)}
-                  </span>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            {hasMore && (
+              <button type="button" onClick={loadMore} disabled={loadingMore} className="btn-secondary mt-2 w-full py-3 text-sm">
+                {loadingMore ? "Loading..." : "Load more"}
+              </button>
+            )}
+          </>
         )}
       </section>
     </div>

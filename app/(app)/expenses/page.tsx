@@ -2,10 +2,12 @@
 
 import ExpenseCard from "@/components/ExpenseCard";
 import FilterBar, { emptyFilters, filtersToParams, type Filters } from "@/components/FilterBar";
+import { ListSkeleton } from "@/components/ListSkeleton";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatPKR } from "@/lib/format";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { usePaginatedList } from "@/hooks/usePaginatedList";
 
 interface Expense {
   _id: string;
@@ -18,46 +20,40 @@ interface Expense {
 }
 
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [total, setTotal] = useState(0);
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const filtersKey = useMemo(() => filtersToParams(filters), [filters]);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    const qs = filtersToParams(filters);
-    fetch(`/api/expenses${qs ? `?${qs}` : ""}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setExpenses(data.expenses ?? []);
-        setTotal(data.total ?? 0);
-        setCount(data.count ?? 0);
-        setLoading(false);
-      });
-  }, [filters]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 300);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const { items, meta, loading, loadingMore, hasMore, loadMore, refresh } =
+    usePaginatedList<Expense>({
+      baseUrl: "/api/expenses",
+      filtersKey,
+      getItems: (d) => (d.expenses as Expense[]) ?? [],
+      getHasMore: (d) => !!d.hasMore,
+    });
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await fetch(`/api/expenses/${id}`, { method: "DELETE" });
-    load();
+    const res = await fetch(`/api/expenses/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      alert("Could not delete expense");
+      return;
+    }
+    refresh();
   }
 
+  const total = (meta.total as number) ?? 0;
+  const count = (meta.count as number) ?? items.length;
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Expense Ledger</h1>
-          <p className="text-sm text-slate-400">
-            {formatPKR(total)} total · {count} records
+    <div className="space-y-3 sm:space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-lg font-bold sm:text-xl">Expense Ledger</h1>
+          <p className="text-xs text-slate-400 sm:text-sm">
+            {loading && !items.length ? "Loading..." : `${formatPKR(total)} · ${count} records`}
           </p>
         </div>
-        <Link href="/expenses/add" className="btn-primary text-sm px-4 py-2">
+        <Link href="/expenses/add" className="btn-primary shrink-0 px-3 py-2.5 text-sm">
           + Record
         </Link>
       </div>
@@ -67,34 +63,46 @@ export default function ExpensesPage() {
         onChange={setFilters}
         showCategory
         categories={EXPENSE_CATEGORIES}
+        collapsible
       />
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-        </div>
-      ) : !expenses.length ? (
-        <div className="card border-dashed py-12 text-center">
-          <p className="text-slate-500">No expenses match your filters</p>
+      {loading && !items.length ? (
+        <ListSkeleton rows={6} />
+      ) : !items.length ? (
+        <div className="card border-dashed py-10 text-center">
+          <p className="text-sm text-slate-500">No expenses match your filters</p>
           <Link href="/expenses/add" className="mt-3 inline-block text-sm text-blue-400">
             Add expense →
           </Link>
         </div>
       ) : (
-        <div className="space-y-2">
-          {expenses.map((e) => (
-            <ExpenseCard
-              key={e._id}
-              title={e.title}
-              amount={e.amount}
-              category={e.category}
-              date={e.date}
-              vendor={e.vendor}
-              hasInvoice={!!e.invoiceName}
-              onDelete={() => handleDelete(e._id)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="space-y-2">
+            {items.map((e) => (
+              <ExpenseCard
+                key={e._id}
+                id={e._id}
+                title={e.title}
+                amount={e.amount}
+                category={e.category}
+                date={e.date}
+                vendor={e.vendor}
+                invoiceName={e.invoiceName}
+                onDelete={() => handleDelete(e._id)}
+              />
+            ))}
+          </div>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="btn-secondary w-full py-3 text-sm"
+            >
+              {loadingMore ? "Loading..." : "Load more"}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
