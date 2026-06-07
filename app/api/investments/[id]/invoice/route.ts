@@ -23,7 +23,7 @@ export async function GET(
   const { buffer, mime } = parseInvoiceData(item.invoiceData, item.invoiceMime);
   const filename = safeInvoiceFilename(item.invoiceName);
 
-  return new NextResponse(buffer, {
+  return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": mime,
       "Content-Disposition": `inline; filename="${filename}"`,
