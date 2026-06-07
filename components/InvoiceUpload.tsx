@@ -71,28 +71,61 @@ export function ViewInvoiceButton({
   invoiceName?: string;
 }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   if (!invoiceName) return null;
 
   async function openInvoice() {
     setLoading(true);
+    setError("");
+
+    const tab = window.open("about:blank", "_blank");
+
     try {
       const res = await fetch(`/api/${type}/${id}/invoice`);
-      const data = await res.json();
-      if (data.invoiceData) window.open(data.invoiceData, "_blank");
+      if (!res.ok) {
+        tab?.close();
+        setError("Not found");
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const filename = invoiceName || "invoice";
+
+      if (tab) {
+        tab.location.href = url;
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch {
+      tab?.close();
+      setError("Failed");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <button
-      type="button"
-      onClick={openInvoice}
-      disabled={loading}
-      className="min-h-[36px] text-xs font-medium text-blue-400 active:text-blue-300 disabled:opacity-50"
-    >
-      {loading ? "Opening..." : "View invoice"}
-    </button>
+    <span className="inline-flex flex-col">
+      <button
+        type="button"
+        onClick={openInvoice}
+        disabled={loading}
+        className="min-h-[36px] text-xs font-medium text-blue-400 active:text-blue-300 disabled:opacity-50"
+      >
+        {loading ? "Opening..." : "View invoice"}
+      </button>
+      {error && <span className="text-[10px] text-red-400">{error}</span>}
+    </span>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { isAuthenticated } from "@/lib/auth";
+import { parseInvoiceData, safeInvoiceFilename } from "@/lib/invoice";
 import Investment from "@/models/Investment";
 
 export async function GET(
@@ -19,9 +20,15 @@ export async function GET(
     return NextResponse.json({ error: "No invoice" }, { status: 404 });
   }
 
-  return NextResponse.json({
-    invoiceName: item.invoiceName,
-    invoiceData: item.invoiceData,
-    invoiceMime: item.invoiceMime,
+  const { buffer, mime } = parseInvoiceData(item.invoiceData, item.invoiceMime);
+  const filename = safeInvoiceFilename(item.invoiceName);
+
+  return new NextResponse(buffer, {
+    headers: {
+      "Content-Type": mime,
+      "Content-Disposition": `inline; filename="${filename}"`,
+      "Content-Length": String(buffer.length),
+      "Cache-Control": "private, max-age=3600",
+    },
   });
 }
