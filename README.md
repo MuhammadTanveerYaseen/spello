@@ -30,7 +30,7 @@ Professional mobile expense management for Spello Cafe during the construction p
 
 ## Login
 
-Security key: `spello-shafiq`
+Security key:
 
 ## Tech Stack
 
