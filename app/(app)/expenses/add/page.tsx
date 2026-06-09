@@ -1,38 +1,15 @@
 "use client";
 
+import InvoiceUpload, { type InvoiceData } from "@/components/InvoiceUpload";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { useRouter } from "next/navigation";
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 
 export default function AddExpensePage() {
   const router = useRouter();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [invoicePreview, setInvoicePreview] = useState<string | null>(null);
-  const [invoiceData, setInvoiceData] = useState({ name: "", data: "", mime: "" });
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Invoice must be under 5MB");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setInvoicePreview(file.type.startsWith("image/") ? result : null);
-      setInvoiceData({
-        name: file.name,
-        data: result,
-        mime: file.type,
-      });
-    };
-    reader.readAsDataURL(file);
-  }
+  const [invoice, setInvoice] = useState<InvoiceData | null>(null);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -40,17 +17,22 @@ export default function AddExpensePage() {
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
-    const body = {
+    const body: Record<string, unknown> = {
       title: form.get("title"),
       amount: form.get("amount"),
       category: form.get("category"),
       description: form.get("description"),
       date: form.get("date"),
       vendor: form.get("vendor"),
-      invoiceName: invoiceData.name,
-      invoiceData: invoiceData.data,
-      invoiceMime: invoiceData.mime,
     };
+
+    if (invoice?.url) {
+      body.invoiceName = invoice.name;
+      body.invoiceUrl = invoice.url;
+      body.invoicePublicId = invoice.publicId;
+      body.invoiceMime = invoice.mime;
+      body.invoiceResourceType = invoice.resourceType;
+    }
 
     try {
       const res = await fetch("/api/expenses", {
@@ -136,26 +118,11 @@ export default function AddExpensePage() {
           />
         </div>
 
-        <div>
-          <label className="mb-1 block text-sm text-slate-400">Upload Invoice</label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*,.pdf"
-            onChange={handleFileChange}
-            className="input-field file:mr-3 file:rounded file:border-0 file:bg-blue-600 file:px-3 file:py-1 file:text-sm file:text-white"
-          />
-          {invoiceData.name && (
-            <p className="mt-1 text-xs text-emerald-300">✓ {invoiceData.name}</p>
-          )}
-          {invoicePreview && (
-            <img
-              src={invoicePreview}
-              alt="Invoice preview"
-              className="mt-2 max-h-32 rounded-lg border border-slate-600 object-cover"
-            />
-          )}
-        </div>
+        <InvoiceUpload
+          onChange={setInvoice}
+          onClear={() => setInvoice(null)}
+          onError={setError}
+        />
 
         {error && (
           <p className="rounded-xl bg-rose-500/20 px-3 py-2 text-sm text-rose-300">{error}</p>

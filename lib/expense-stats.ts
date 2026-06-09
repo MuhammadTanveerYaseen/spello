@@ -1,11 +1,16 @@
 import Expense from "@/models/Expense";
 import { LABOR_CATEGORY, MATERIAL_CATEGORIES } from "@/lib/constants";
+import type { PipelineStage } from "mongoose";
+
+/** Only load fields needed for stats — avoids reading multi-MB invoiceData blobs. */
+const STATS_PROJECT = { amount: 1, category: 1, date: 1 };
 
 export async function getExpenseStats() {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [result] = await Expense.aggregate([
+    { $project: STATS_PROJECT },
     {
       $facet: {
         totals: [{ $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }],
@@ -43,9 +48,11 @@ export async function getExpenseStats() {
 }
 
 export async function getExpenseTotal(match: Record<string, unknown> = {}) {
-  const [row] = await Expense.aggregate([
-    { $match: match },
-    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-  ]);
+  const pipeline: PipelineStage[] = [];
+  if (Object.keys(match).length) pipeline.push({ $match: match });
+  pipeline.push({ $project: { amount: 1 } });
+  pipeline.push({ $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } });
+
+  const [row] = await Expense.aggregate(pipeline);
   return { total: row?.total ?? 0, count: row?.count ?? 0 };
 }

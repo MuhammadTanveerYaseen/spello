@@ -34,6 +34,8 @@ interface Investment {
   reference: string;
   note: string;
   invoiceName?: string;
+  invoiceUrl?: string;
+  invoiceMime?: string;
 }
 
 const typeOptions = [
@@ -47,7 +49,7 @@ export default function InvestorsPage() {
   const [showInvestorForm, setShowInvestorForm] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [invoice, setInvoice] = useState<InvoiceData>({ name: "", data: "", mime: "" });
+  const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [formError, setFormError] = useState("");
 
   const filtersKey = useMemo(() => filtersToParams(filters), [filters]);
@@ -108,10 +110,7 @@ export default function InvestorsPage() {
     setSubmitting(true);
     setFormError("");
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/investments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const body: Record<string, unknown> = {
         investorId: form.get("investorId"),
         type: form.get("type"),
         amount: form.get("amount"),
@@ -119,15 +118,25 @@ export default function InvestorsPage() {
         paymentMethod: form.get("paymentMethod"),
         reference: form.get("reference"),
         note: form.get("note"),
-        invoiceName: invoice.name,
-        invoiceData: invoice.data,
-        invoiceMime: invoice.mime,
-      }),
+      };
+
+    if (invoice?.url) {
+      body.invoiceName = invoice.name;
+      body.invoiceUrl = invoice.url;
+      body.invoicePublicId = invoice.publicId;
+      body.invoiceMime = invoice.mime;
+      body.invoiceResourceType = invoice.resourceType;
+    }
+
+    const res = await fetch("/api/investments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
     setSubmitting(false);
     if (res.ok) {
       setShowTransactionForm(false);
-      setInvoice({ name: "", data: "", mime: "" });
+      setInvoice(null);
       loadInvestors();
       refresh();
       (e.target as HTMLFormElement).reset();
@@ -219,7 +228,7 @@ export default function InvestorsPage() {
           </select>
           <input name="reference" className="input-field" placeholder="Reference no." />
           <input name="note" className="input-field" placeholder="Note (optional)" />
-          <InvoiceUpload onChange={setInvoice} onError={setFormError} />
+          <InvoiceUpload onChange={setInvoice} onClear={() => setInvoice(null)} onError={setFormError} />
           {formError && <p className="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-400">{formError}</p>}
           <button type="submit" disabled={submitting || !investors.length} className="btn-primary w-full py-3 text-sm">
             {submitting ? "Saving..." : "Save"}
@@ -306,7 +315,14 @@ export default function InvestorsPage() {
                       <p className="text-xs text-slate-500">
                         {item.type === "contribution" ? "In" : "Out"} · {new Date(item.date).toLocaleDateString("en-PK", { day: "numeric", month: "short" })}
                       </p>
-                      <ViewInvoiceButton type="investments" id={item._id} invoiceName={item.invoiceName} />
+                      <ViewInvoiceButton
+                        type="investments"
+                        id={item._id}
+                        invoiceName={item.invoiceName}
+                        invoiceUrl={item.invoiceUrl}
+                        invoiceMime={item.invoiceMime}
+                        compact
+                      />
                     </div>
                     <span className={`shrink-0 text-sm font-bold sm:text-base ${item.type === "contribution" ? "text-emerald-400" : "text-red-400"}`}>
                       {item.type === "contribution" ? "+" : "-"}{formatPKR(item.amount)}

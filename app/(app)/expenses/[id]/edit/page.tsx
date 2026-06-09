@@ -15,6 +15,8 @@ interface Expense {
   date: string;
   vendor?: string;
   invoiceName?: string;
+  invoiceUrl?: string;
+  invoiceMime?: string;
 }
 
 export default function EditExpensePage() {
@@ -24,7 +26,7 @@ export default function EditExpensePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [invoice, setInvoice] = useState<InvoiceData>({ name: "", data: "", mime: "" });
+  const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [removeInvoice, setRemoveInvoice] = useState(false);
 
   useEffect(() => {
@@ -55,10 +57,12 @@ export default function EditExpensePage() {
 
     if (removeInvoice) {
       body.removeInvoice = true;
-    } else if (invoice.data) {
+    } else if (invoice?.url) {
       body.invoiceName = invoice.name;
-      body.invoiceData = invoice.data;
+      body.invoiceUrl = invoice.url;
+      body.invoicePublicId = invoice.publicId;
       body.invoiceMime = invoice.mime;
+      body.invoiceResourceType = invoice.resourceType;
     }
 
     try {
@@ -103,7 +107,8 @@ export default function EditExpensePage() {
   }
 
   const dateValue = new Date(expense.date).toISOString().split("T")[0];
-  const hasExistingInvoice = !!expense.invoiceName && !removeInvoice && !invoice.data;
+  const hasExistingInvoice =
+    !!(expense.invoiceUrl || expense.invoiceName) && !removeInvoice && !invoice;
 
   return (
     <div className="space-y-5">
@@ -178,32 +183,34 @@ export default function EditExpensePage() {
 
         {hasExistingInvoice && (
           <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2">
-            <p className="text-xs text-emerald-400">Current invoice: {expense.invoiceName}</p>
+            <p className="text-xs text-emerald-400">Current: {expense.invoiceName}</p>
             <button
               type="button"
               onClick={() => setRemoveInvoice(true)}
               className="mt-1 text-xs text-red-400 hover:text-red-300"
             >
-              Remove invoice
+              Remove receipt
             </button>
           </div>
         )}
 
         {removeInvoice && (
           <p className="text-xs text-amber-400">
-            Invoice will be removed on save.{" "}
-            <button
-              type="button"
-              onClick={() => setRemoveInvoice(false)}
-              className="text-blue-400 hover:text-blue-300"
-            >
+            Receipt will be removed on save.{" "}
+            <button type="button" onClick={() => setRemoveInvoice(false)} className="text-blue-400">
               Undo
             </button>
           </p>
         )}
 
-        {!hasExistingInvoice && !removeInvoice && (
-          <InvoiceUpload onChange={setInvoice} onError={setError} />
+        {(!hasExistingInvoice || invoice) && !removeInvoice && (
+          <InvoiceUpload
+            onChange={setInvoice}
+            onClear={() => setInvoice(null)}
+            onError={setError}
+            existingName={expense.invoiceName}
+            existingUrl={expense.invoiceUrl}
+          />
         )}
 
         {error && (

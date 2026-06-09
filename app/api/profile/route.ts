@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { ensureAppSettings } from "@/lib/settings";
+import { clearSettingsCache, ensureAppSettings, getProfileSettings } from "@/lib/settings";
 import AppSettings from "@/models/AppSettings";
 
 export async function GET() {
@@ -9,8 +9,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const settings = await ensureAppSettings();
-  const { securityKeyHash: _, ...profile } = settings.toObject();
+  const profile = await getProfileSettings();
   return NextResponse.json(profile);
 }
 
@@ -28,9 +27,12 @@ export async function PUT(req: NextRequest) {
       settings._id,
       { ownerName, cafeName, email, phone, address },
       { new: true }
-    ).select("-securityKeyHash");
+    )
+      .select("-securityKeyHash")
+      .lean();
 
-    await logActivity("Profile updated", cafeName || "Spello Cafe", "profile");
+    void logActivity("Profile updated", cafeName || "Spello Cafe", "profile");
+    clearSettingsCache();
 
     return NextResponse.json(updated);
   } catch (error) {

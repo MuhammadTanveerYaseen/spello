@@ -17,6 +17,8 @@ interface Expense {
   date: string;
   vendor?: string;
   invoiceName?: string;
+  invoiceUrl?: string;
+  invoiceMime?: string;
 }
 
 export default function ExpensesPage() {
@@ -88,6 +90,8 @@ export default function ExpensesPage() {
                 date={e.date}
                 vendor={e.vendor}
                 invoiceName={e.invoiceName}
+                invoiceUrl={e.invoiceUrl}
+                invoiceMime={e.invoiceMime}
                 onDelete={() => handleDelete(e._id)}
               />
             ))}

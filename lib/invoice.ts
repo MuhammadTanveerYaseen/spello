@@ -3,10 +3,10 @@ export function parseInvoiceData(invoiceData: string, invoiceMime = "") {
   let mime = invoiceMime;
 
   if (invoiceData.startsWith("data:")) {
-    const match = invoiceData.match(/^data:([^;]+);base64,(.+)$/s);
-    if (match) {
-      mime = mime || match[1];
-      base64 = match[2];
+    const comma = invoiceData.indexOf(",");
+    if (comma > 0) {
+      mime = mime || invoiceData.slice(5, invoiceData.indexOf(";"));
+      base64 = invoiceData.slice(comma + 1);
     }
   }
 

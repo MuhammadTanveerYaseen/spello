@@ -4,6 +4,8 @@ import { isAuthenticated } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { EXPENSE_LIST_FIELDS } from "@/lib/fields";
 import { formatPKR } from "@/lib/format";
+import { applyInvoiceUpdate } from "@/lib/invoice-store";
+import { invalidateDashboardCache } from "@/lib/dashboard-stats";
 import Expense from "@/models/Expense";
 
 export async function GET(
@@ -36,13 +38,17 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await req.json();
-    const { title, amount, category, description, date, vendor, invoiceName, invoiceData, invoiceMime, removeInvoice } = body;
+    const { title, amount, category, description, date, vendor } = body;
 
     if (!title || amount === undefined || amount === "" || !category) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
     await connectDB();
+
+    const existing = await Expense.findById(id)
+      .select("invoicePublicId invoiceResourceType invoiceMime invoiceName")
+      .lean();
 
     const update: Record<string, unknown> = {
       title: String(title).trim(),
@@ -53,15 +59,7 @@ export async function PATCH(
       vendor: vendor || "",
     };
 
-    if (removeInvoice) {
-      update.invoiceName = "";
-      update.invoiceData = "";
-      update.invoiceMime = "";
-    } else if (invoiceData) {
-      update.invoiceName = invoiceName || "";
-      update.invoiceData = invoiceData;
-      update.invoiceMime = invoiceMime || "";
-    }
+    await applyInvoiceUpdate(body, update, existing ?? undefined);
 
     const expense = await Expense.findByIdAndUpdate(id, update, { new: true })
       .select(EXPENSE_LIST_FIELDS)
@@ -71,11 +69,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await logActivity(
+    void logActivity(
       "Expense updated",
       `${expense.title} — ${formatPKR(expense.amount)} (${expense.category})`,
       "expense"
     );
+
+    invalidateDashboardCache();
 
     return NextResponse.json(expense);
   } catch (error) {
@@ -100,11 +100,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await logActivity(
+  void logActivity(
     "Expense deleted",
     `${expense.title} — ${formatPKR(expense.amount)}`,
     "expense"
   );
+
+  invalidateDashboardCache();
 
   return NextResponse.json({ success: true });
 }

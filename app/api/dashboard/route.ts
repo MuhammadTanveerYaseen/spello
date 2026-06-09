@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { isAuthenticated } from "@/lib/auth";
-import { getExpenseStats } from "@/lib/expense-stats";
 import { EXPENSE_LIST_FIELDS, INVESTMENT_LIST_FIELDS } from "@/lib/fields";
-import { getFundSummary } from "@/lib/investment";
-import { ensureAppSettings } from "@/lib/settings";
+import { getCachedDashboardStats } from "@/lib/dashboard-stats";
+import { getCafeName } from "@/lib/settings";
 import Expense from "@/models/Expense";
 import Investment from "@/models/Investment";
 
@@ -15,20 +14,11 @@ export async function GET() {
 
   await connectDB();
 
-  const [stats, fund, recentExpenses, recentInvestments, settings] = await Promise.all([
-    getExpenseStats(),
-    getFundSummary(),
-    Expense.find()
-      .select(EXPENSE_LIST_FIELDS)
-      .sort({ date: -1 })
-      .limit(5)
-      .lean(),
-    Investment.find()
-      .select(INVESTMENT_LIST_FIELDS)
-      .sort({ date: -1 })
-      .limit(3)
-      .lean(),
-    ensureAppSettings(),
+  const [{ stats, fund }, cafeName, recentExpenses, recentInvestments] = await Promise.all([
+    getCachedDashboardStats(),
+    getCafeName(),
+    Expense.find().select(EXPENSE_LIST_FIELDS).sort({ date: -1 }).limit(5).lean(),
+    Investment.find().select(INVESTMENT_LIST_FIELDS).sort({ date: -1 }).limit(3).lean(),
   ]);
 
   const { totalExpenses } = stats;
@@ -43,8 +33,8 @@ export async function GET() {
     totalReturns: fund.returns,
     availableBalance,
     utilization,
+    cafeName,
     recentExpenses,
     recentInvestments,
-    cafeName: settings.cafeName || "Spello Cafe",
   });
 }

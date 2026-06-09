@@ -1,6 +1,7 @@
 import { formatPKR } from "@/lib/format";
+import { hasInvoice } from "@/lib/invoice-client";
 import Link from "next/link";
-import { ViewInvoiceButton } from "@/components/InvoiceUpload";
+import { ViewInvoiceButton } from "@/components/InvoiceViewer";
 
 interface ExpenseCardProps {
   id?: string;
@@ -10,6 +11,8 @@ interface ExpenseCardProps {
   date: string;
   vendor?: string;
   invoiceName?: string;
+  invoiceUrl?: string;
+  invoiceMime?: string;
   onDelete?: () => void;
 }
 
@@ -21,18 +24,21 @@ export default function ExpenseCard({
   date,
   vendor,
   invoiceName,
+  invoiceUrl,
+  invoiceMime,
   onDelete,
 }: ExpenseCardProps) {
-  const hasInvoice = !!invoiceName;
+  const showInvoice = hasInvoice({ invoiceName, invoiceUrl });
+
   return (
     <div className="card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate font-semibold">{title}</h3>
-            {hasInvoice && (
+            {showInvoice && (
               <span className="shrink-0 rounded bg-emerald-900 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                Invoice
+                Receipt
               </span>
             )}
           </div>
@@ -60,8 +66,15 @@ export default function ExpenseCard({
             Edit
           </Link>
         )}
-        {id && hasInvoice && (
-          <ViewInvoiceButton type="expenses" id={id} invoiceName={invoiceName} />
+        {id && showInvoice && (
+          <ViewInvoiceButton
+            type="expenses"
+            id={id}
+            invoiceName={invoiceName}
+            invoiceUrl={invoiceUrl}
+            invoiceMime={invoiceMime}
+            compact
+          />
         )}
         {onDelete && (
           <button

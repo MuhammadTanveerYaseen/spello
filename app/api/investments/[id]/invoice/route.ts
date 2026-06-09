@@ -15,8 +15,19 @@ export async function GET(
   const { id } = await params;
   await connectDB();
 
-  const item = await Investment.findById(id).select("invoiceName invoiceData invoiceMime").lean();
-  if (!item?.invoiceData) {
+  const item = await Investment.findById(id)
+    .select("invoiceName invoiceUrl invoiceData invoiceMime")
+    .lean();
+
+  if (!item) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (item.invoiceUrl) {
+    return NextResponse.redirect(item.invoiceUrl);
+  }
+
+  if (!item.invoiceData) {
     return NextResponse.json({ error: "No invoice" }, { status: 404 });
   }
 

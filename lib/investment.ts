@@ -1,4 +1,7 @@
 import Investment from "@/models/Investment";
+import type { PipelineStage } from "mongoose";
+
+const FUND_PROJECT = { amount: 1, type: 1 };
 
 export function sumInvestments(investments: Array<{ type: string; amount: number }>) {
   const contributions = investments
@@ -12,6 +15,7 @@ export function sumInvestments(investments: Array<{ type: string; amount: number
 
 export async function getFundSummary() {
   const [row] = await Investment.aggregate([
+    { $project: FUND_PROJECT },
     {
       $group: {
         _id: null,
@@ -31,20 +35,22 @@ export async function getFundSummary() {
 }
 
 export async function getFilteredFundSummary(match: Record<string, unknown> = {}) {
-  const [row] = await Investment.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: null,
-        contributions: {
-          $sum: { $cond: [{ $eq: ["$type", "contribution"] }, "$amount", 0] },
-        },
-        returns: {
-          $sum: { $cond: [{ $eq: ["$type", "return"] }, "$amount", 0] },
-        },
+  const pipeline: PipelineStage[] = [];
+  if (Object.keys(match).length) pipeline.push({ $match: match });
+  pipeline.push({ $project: FUND_PROJECT });
+  pipeline.push({
+    $group: {
+      _id: null,
+      contributions: {
+        $sum: { $cond: [{ $eq: ["$type", "contribution"] }, "$amount", 0] },
+      },
+      returns: {
+        $sum: { $cond: [{ $eq: ["$type", "return"] }, "$amount", 0] },
       },
     },
-  ]);
+  });
+
+  const [row] = await Investment.aggregate(pipeline);
   return sumInvestments([
     { type: "contribution", amount: row?.contributions ?? 0 },
     { type: "return", amount: row?.returns ?? 0 },

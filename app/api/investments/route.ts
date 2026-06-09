@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { isAuthenticated } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { getExpenseTotal } from "@/lib/expense-stats";
 import { INVESTMENT_LIST_FIELDS, DEFAULT_PAGE_SIZE } from "@/lib/fields";
 import { formatPKR } from "@/lib/format";
-import { getFundSummary, getFilteredFundSummary } from "@/lib/investment";
+import { invoiceCreateFields } from "@/lib/invoice-store";
+import { getFilteredFundSummary } from "@/lib/investment";
+import { getCachedDashboardStats, invalidateDashboardCache } from "@/lib/dashboard-stats";
 import { buildDateFilter, buildSearchFilter } from "@/lib/query";
 import Investment from "@/models/Investment";
 import Investor from "@/models/Investor";
@@ -40,19 +41,22 @@ export async function GET(req: NextRequest) {
   if (searchFilter) Object.assign(query, searchFilter);
 
   const skip = (page - 1) * limit;
+  const hasFilters = Boolean(type || investorId || from || to || search);
 
-  const [investments, fund, expenseStats, filteredTotals, totalCount] = await Promise.all([
+  const [cached, investments, totalCount, filteredTotals] = await Promise.all([
+    getCachedDashboardStats(),
     Investment.find(query)
       .select(INVESTMENT_LIST_FIELDS)
       .sort({ date: -1 })
       .skip(skip)
       .limit(limit)
       .lean(),
-    getFundSummary(),
-    getExpenseTotal(),
-    getFilteredFundSummary(query),
     Investment.countDocuments(query),
+    hasFilters ? getFilteredFundSummary(query) : Promise.resolve(null),
   ]);
+
+  const fund = cached.fund;
+  const expenseStats = { total: cached.stats.totalExpenses };
 
   const availableBalance = fund.netFund - expenseStats.total;
   const utilization =
@@ -64,7 +68,7 @@ export async function GET(req: NextRequest) {
     totalExpenses: expenseStats.total,
     availableBalance,
     utilization: Math.round(utilization),
-    filteredTotals,
+    filteredTotals: filteredTotals ?? fund,
     count: investments.length,
     totalCount,
     page,
@@ -79,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { investorId, type, amount, date, paymentMethod, reference, note, invoiceName, invoiceData, invoiceMime } = body;
+    const { investorId, type, amount, date, paymentMethod, reference, note } = body;
 
     if (!investorId || !type || !amount) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -100,18 +104,18 @@ export async function POST(req: NextRequest) {
       paymentMethod: paymentMethod || "Bank Transfer",
       reference: reference || "",
       note: note || "",
-      invoiceName: invoiceName || "",
-      invoiceData: invoiceData || "",
-      invoiceMime: invoiceMime || "",
+      ...invoiceCreateFields(body),
     });
 
     const label = type === "contribution" ? "Contribution received" : "Return paid";
-    const invoiceNote = invoiceName ? " (invoice attached)" : "";
-    await logActivity(
+    const invoiceNote = body.invoiceName || body.invoiceUrl ? " (invoice attached)" : "";
+    void logActivity(
       label,
       `${investor.name} — ${formatPKR(Number(amount))}${invoiceNote}`,
       "investment"
     );
+
+    invalidateDashboardCache();
 
     const { invoiceData: _, ...safe } = investment.toObject();
     return NextResponse.json(safe, { status: 201 });

@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { isAuthenticated } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { getExpenseTotal, getExpenseStats } from "@/lib/expense-stats";
+import { getExpenseTotal } from "@/lib/expense-stats";
 import { EXPENSE_LIST_FIELDS, DEFAULT_PAGE_SIZE } from "@/lib/fields";
 import { formatPKR } from "@/lib/format";
+import { invoiceCreateFields } from "@/lib/invoice-store";
+import { invalidateDashboardCache } from "@/lib/dashboard-stats";
 import { buildDateFilter, buildSearchFilter } from "@/lib/query";
 import Expense from "@/models/Expense";
 
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { title, amount, category, description, date, vendor, invoiceName, invoiceData, invoiceMime } = body;
+    const { title, amount, category, description, date, vendor } = body;
 
     if (!title || !amount || !category) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -75,16 +77,16 @@ export async function POST(req: NextRequest) {
       description: description || "",
       date: date ? new Date(date) : new Date(),
       vendor: vendor || "",
-      invoiceName: invoiceName || "",
-      invoiceData: invoiceData || "",
-      invoiceMime: invoiceMime || "",
+      ...invoiceCreateFields(body),
     });
 
-    await logActivity(
+    void logActivity(
       "Expense added",
       `${title} — ${formatPKR(Number(amount))} (${category})`,
       "expense"
     );
+
+    invalidateDashboardCache();
 
     const { invoiceData: _, ...safe } = expense.toObject();
     return NextResponse.json(safe, { status: 201 });
